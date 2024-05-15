@@ -16,11 +16,24 @@ describe("RestaurantTab", function () {
     const RestaurantTab = await hre.ethers.getContractFactory("RestaurantTab");
     const friendsWhoArriveWithTabOwner = [friend1, friend2];
     const restaurantTab = await RestaurantTab.deploy(restaurantAccount, friendsWhoArriveWithTabOwner, { value: tabLimit });
-
+    
     return { restaurantTab, tabOwnerAccount, restaurantAccount, friend1, friend2, friend3RunningLate, partyCrasher1 };
   }
+  async function deployInvalidRestaurantTab() {
+    // Contracts are deployed using the first signer/account by default
+    const [ restaurantAccount ] = await hre.ethers.getSigners();
+    const RestaurantTab = await hre.ethers.getContractFactory("RestaurantTab");
+    const restaurantTab = await RestaurantTab.deploy(restaurantAccount, [], { value: tabLimit });
+
+    return { restaurantTab, restaurantAccount };
+  }
   describe("Deployment", async () => {
-    await loadFixture(deployRestaurantTab)
+    it("should deploy fine with a user and a restaurant", async () => {
+      await loadFixture(deployRestaurantTab);
+    });
+    it("should not deploy if a user tris to deploy with themselves as the restaurant", async () => {
+      await expect(loadFixture(deployInvalidRestaurantTab)).to.be.revertedWith("user cannot be the restaurant.");
+    });
   });
 
   describe("opening a tab", async () => {
@@ -64,6 +77,7 @@ describe("RestaurantTab", function () {
       expect(members.length).to.equal(three);
       const tryingToAddRestaurant = restaurantTab.connect(tabOwnerAccount).addUserToParty(restaurantAccount.address)
       await expect(tryingToAddRestaurant).to.be.reverted;
+      await expect(tryingToAddRestaurant).to.be.revertedWith("cannot add the restaurant to your party.");
       members = await restaurantTab.getPartyMembers();
       expect(members.length).to.equal(three);
       expect(await restaurantTab.getIsMemberInParty(restaurantAccount.address)).to.equal(false);
@@ -75,6 +89,7 @@ describe("RestaurantTab", function () {
       expect(members.length).to.equal(three);
       const tryingToAddRestaurant = restaurantTab.connect(friend1).addUserToParty(friend3RunningLate.address);
       await expect(tryingToAddRestaurant).to.be.reverted;
+      await expect(tryingToAddRestaurant).to.be.revertedWith("you did not open the tab.");
       members = await restaurantTab.getPartyMembers();
       expect(members.length).to.equal(three);
       expect(await restaurantTab.getIsMemberInParty(friend3RunningLate.address)).to.equal(false);
@@ -106,6 +121,7 @@ describe("RestaurantTab", function () {
       expect(members.length).to.equal(3);
       expect(await restaurantTab.getIsMemberInParty(friend1.address)).to.equal(true);
       await expect(restaurantTab.connect(friend2).removeUserFromParty(friend1.address)).to.be.reverted;
+      await expect(restaurantTab.connect(friend2).removeUserFromParty(friend1.address)).to.be.revertedWith("you did not open the tab.");
       expect(members.length).to.equal(3);
       expect(await restaurantTab.getIsMemberInParty(friend1.address)).to.equal(true);
 
@@ -133,12 +149,14 @@ describe("RestaurantTab", function () {
       expect(await restaurantTab.getRemainingSpendableAmount()).to.equal(tabLimit - foodPrice);
       await restaurantTab.connect(tabOwnerAccount).closeBillAndPay();
       await expect(restaurantTab.connect(friend1).spendFunds(1)).to.be.reverted;
+      await expect(restaurantTab.connect(friend1).spendFunds(1)).to.be.revertedWith("tab is not open.");
 
     });
     it("can will not allow non-party members to spend", async () => {
       const { restaurantTab, partyCrasher1 } = await loadFixture(deployRestaurantTab);
       expect(await restaurantTab.getRemainingSpendableAmount()).to.equal(tabLimit);
       await expect(restaurantTab.connect(partyCrasher1).spendFunds(1)).to.be.reverted;
+      await expect(restaurantTab.connect(partyCrasher1).spendFunds(1)).to.be.revertedWith("user is not part of this tab's party.");
       expect(await restaurantTab.getRemainingSpendableAmount()).to.equal(tabLimit);
     });
     it("can only be used if the price of an item does not make the tab limit exceed", async () => {
@@ -147,6 +165,7 @@ describe("RestaurantTab", function () {
       expect(await restaurantTab.tabLimit()).to.equal(tabLimit);
       const expensiveFoodItemprice = tabLimit + 1;
       await expect(restaurantTab.connect(friend1).spendFunds(expensiveFoodItemprice)).to.be.reverted;
+      await expect(restaurantTab.connect(friend1).spendFunds(expensiveFoodItemprice)).to.be.revertedWith("funds remaining will not cover the expense.");
       const cheapFooditemWithinLimit = 1;
       await restaurantTab.connect(friend1).spendFunds(cheapFooditemWithinLimit);
       expect(await restaurantTab.billAmount()).to.equal(cheapFooditemWithinLimit);
@@ -179,6 +198,7 @@ describe("RestaurantTab", function () {
       const { restaurantTab, friend1 } = await loadFixture(deployRestaurantTab);
       expect(await restaurantTab.isOpen()).to.equal(true);
       await expect(restaurantTab.connect(friend1).closeBillAndPay()).to.be.reverted;
+      await expect(restaurantTab.connect(friend1).closeBillAndPay()).to.be.revertedWith("you are not the tab owner or restaurant");
       expect(await restaurantTab.isOpen()).to.equal(true);
 
     });

@@ -58,7 +58,7 @@ contract RestaurantTab {
     modifier isTabOwnerOrRestaurant() {
         require(
             msg.sender == owner || msg.sender == restaurant,
-            "are not the tab owner or restaurant"
+            "you are not the tab owner or restaurant"
         );
         _;
     }
