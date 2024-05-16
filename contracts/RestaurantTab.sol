@@ -16,7 +16,6 @@ contract RestaurantTab {
     event TabClosedAndBillPaid(
         address indexed restaurant,
         address indexed tabOwner,
-        uint amountRestaurantEarned,
         uint amountTabOwnerRefunded,
         uint timestamp
     );
@@ -27,8 +26,7 @@ contract RestaurantTab {
     PartyMembers party;
     address payable public owner; // person who opens the tab, and can add funds.
     address payable public restaurant; // This is the restaurant that receives the funds after the tab is closed.
-    uint256 public tabLimit;
-    uint256 public billAmount;
+    uint256 public tabFunds;
     bool public isOpen;
     modifier tabIsOpen() {
         require(isOpen == true, "tab is not open.");
@@ -50,21 +48,9 @@ contract RestaurantTab {
         require(msg.sender == owner, "you did not open the tab.");
         _;
     }
-    modifier isRestaurant() {
-        require(msg.sender == restaurant, "you are not the restaurant.");
-        _;
-    }
-
-    modifier isTabOwnerOrRestaurant() {
-        require(
-            msg.sender == owner || msg.sender == restaurant,
-            "you are not the tab owner or restaurant"
-        );
-        _;
-    }
     modifier expenseWithinLimits(uint256 expenseAmount) {
         require(
-            tabLimit >= billAmount + expenseAmount,
+            tabFunds >= expenseAmount,
             "funds remaining will not cover the expense."
         );
         _;
@@ -77,7 +63,7 @@ contract RestaurantTab {
         isOpen = true;
         owner = payable(msg.sender);
         restaurant = payable(_restaurant);
-        tabLimit += msg.value;
+        tabFunds += msg.value;
         addUserToParty(msg.sender);
         for (uint256 i; i < friends.length; i++) {
             addUserToParty(friends[i]);
@@ -85,7 +71,7 @@ contract RestaurantTab {
     }
 
     function addFunds() external payable tabIsOpen isTabOwner {
-        tabLimit += msg.value;
+        tabFunds += msg.value;
         emit FundsAdded(msg.sender, msg.value, block.timestamp);
     }
 
@@ -120,28 +106,24 @@ contract RestaurantTab {
     function spendFunds(
         uint256 price
     ) external tabIsOpen userIsPartyMember expenseWithinLimits(price) {
-        billAmount += price;
+        tabFunds -= price;
+        (bool sent, ) = payable(restaurant).call{value: price}("");
+        require(sent, "payment to restaurant failed.");
         emit fundsUsed(msg.sender, price, block.timestamp);
     }
 
     function getRemainingSpendableAmount() public view returns (uint256) {
-        return tabLimit - billAmount;
+        return tabFunds;
     }
 
-    function closeTab() private isTabOwnerOrRestaurant {
+    function closeTab() private isTabOwner {
         isOpen = false;
     }
 
-    function closeBillAndPay() public isTabOwnerOrRestaurant {
+    function closeBillAndPay() public isTabOwner {
         closeTab();
         uint256 amountRefundableToOwner = getRemainingSpendableAmount();
-        uint256 amountOwableToRestaurant = billAmount;
-        tabLimit = 0;
-        billAmount = 0;
-        (bool restaurantPaymentSent, ) = payable(restaurant).call{
-            value: amountOwableToRestaurant
-        }("");
-        require(restaurantPaymentSent, "Payment back to restaurant failed.");
+        tabFunds = 0;
         (bool refundSent, ) = payable(owner).call{
             value: amountRefundableToOwner
         }("");
@@ -149,14 +131,9 @@ contract RestaurantTab {
         emit TabClosedAndBillPaid(
             restaurant,
             owner,
-            amountOwableToRestaurant,
             amountRefundableToOwner,
             block.timestamp
         );
-    }
-
-    function restaurantForceCloseTab() external isRestaurant {
-        closeBillAndPay();
     }
 
     function getPartyMembers() external view returns (address[] memory) {

@@ -13,19 +13,18 @@ Just like any tab that you would open at any restaurant or bar, you want only yo
   * can add friends who come late.
   * can remove people from their party.
 * The host and friends: 
-  *  can purchase items and expense them on the tab if the tab has not yet reached the limit yet.
-  * A host can increase the limit on the tab (represented as a deposit)
+  * can purchase items and expense them if the expense is under the remaining funds.
+  * Upon purchase, the amount is deducted from the tab's remaining funds and the restaurant is paid. 
+  * A host can add more funds
 * Party crashers/outsiders cannot lie that they are part of a party and expense on a host's tab. They must be added into the party. 
   * This is my personal favorite benefit
 * The host can close the tab. Once done, the following wil happen:
   * users will no longer be able to incur expenses on the contract
-  * The restaurant will be paid for the expenses incurred
-  * Any remaining amount leftover, from the deposit minus expenses, will be refunded to the host/tab owner.
-  * If the host forgets to close the tab, the restaurant may be able to do so.
+  * Any remaining amount leftover from the funds on the tab will be refunded to the host/tab owner.
 
 ## new features to be added
 * [ ] I would like to a basic front end so folks can interact with this smart contract in an easier fashion. 
-* [ ] I would like to add the ability to set a time limit (maybe a  few hours, several hours, or a day), so that if a host/tab owner forgets to close the tab, the restaurant can close on the party's behalf after the time limit. Although, the host is incentivized close it earlier because of the remaining amount leftover.
+* [ ] I would like to add the ability to set an optional time limit (maybe a few hours, several hours, or a day), so that if a host/tab owner forgets to close the tab, the tab is automatically closed. 
 
 
 

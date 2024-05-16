@@ -16,22 +16,23 @@ describe("RestaurantTab", function () {
     const RestaurantTab = await hre.ethers.getContractFactory("RestaurantTab");
     const friendsWhoArriveWithTabOwner = [friend1, friend2];
     const restaurantTab = await RestaurantTab.deploy(restaurantAccount, friendsWhoArriveWithTabOwner, { value: tabLimit });
-    
+
     return { restaurantTab, tabOwnerAccount, restaurantAccount, friend1, friend2, friend3RunningLate, partyCrasher1 };
   }
-  async function deployInvalidRestaurantTab() {
-    // Contracts are deployed using the first signer/account by default
-    const [ restaurantAccount ] = await hre.ethers.getSigners();
-    const RestaurantTab = await hre.ethers.getContractFactory("RestaurantTab");
-    const restaurantTab = await RestaurantTab.deploy(restaurantAccount, [], { value: tabLimit });
 
-    return { restaurantTab, restaurantAccount };
-  }
   describe("Deployment", async () => {
     it("should deploy fine with a user and a restaurant", async () => {
       await loadFixture(deployRestaurantTab);
     });
-    it("should not deploy if a user tris to deploy with themselves as the restaurant", async () => {
+    it("should not deploy if a user tries to deploy with themselves as the restaurant", async () => {
+      async function deployInvalidRestaurantTab() {
+        // Contracts are deployed using the first signer/account by default
+        const [restaurantAccount] = await hre.ethers.getSigners();
+        const RestaurantTab = await hre.ethers.getContractFactory("RestaurantTab");
+        const restaurantTab = await RestaurantTab.deploy(restaurantAccount, [], { value: tabLimit });
+    
+        return { restaurantTab, restaurantAccount };
+      }
       await expect(loadFixture(deployInvalidRestaurantTab)).to.be.revertedWith("user cannot be the restaurant.");
     });
   });
@@ -141,11 +142,9 @@ describe("RestaurantTab", function () {
   describe("using funds", async () => {
     it("can only be spent if the tab is open", async () => {
       const { restaurantTab, tabOwnerAccount, friend1 } = await loadFixture(deployRestaurantTab);
-      expect(await restaurantTab.billAmount()).to.equal(0);
       expect(await restaurantTab.getRemainingSpendableAmount()).to.equal(tabLimit);
       const foodPrice = 50 * ONE_GWEI;
       await restaurantTab.connect(friend1).spendFunds(foodPrice);
-      expect(await restaurantTab.billAmount()).to.equal(foodPrice);
       expect(await restaurantTab.getRemainingSpendableAmount()).to.equal(tabLimit - foodPrice);
       await restaurantTab.connect(tabOwnerAccount).closeBillAndPay();
       await expect(restaurantTab.connect(friend1).spendFunds(1)).to.be.reverted;
@@ -153,22 +152,24 @@ describe("RestaurantTab", function () {
 
     });
     it("can will not allow non-party members to spend", async () => {
-      const { restaurantTab, partyCrasher1 } = await loadFixture(deployRestaurantTab);
+      const { restaurantTab, partyCrasher1, restaurantAccount } = await loadFixture(deployRestaurantTab);
       expect(await restaurantTab.getRemainingSpendableAmount()).to.equal(tabLimit);
+      // party crasher tries to spend
       await expect(restaurantTab.connect(partyCrasher1).spendFunds(1)).to.be.reverted;
       await expect(restaurantTab.connect(partyCrasher1).spendFunds(1)).to.be.revertedWith("user is not part of this tab's party.");
+      expect(await restaurantTab.getRemainingSpendableAmount()).to.equal(tabLimit);
+      // restaurant tries to spend
+      await expect(restaurantTab.connect(restaurantAccount).spendFunds(1)).to.be.reverted;
+      await expect(restaurantTab.connect(restaurantAccount).spendFunds(1)).to.be.revertedWith("user is not part of this tab's party.");
       expect(await restaurantTab.getRemainingSpendableAmount()).to.equal(tabLimit);
     });
     it("can only be used if the price of an item does not make the tab limit exceed", async () => {
       const { restaurantTab, friend1 } = await loadFixture(deployRestaurantTab);
-      expect(await restaurantTab.billAmount()).to.equal(0);
-      expect(await restaurantTab.tabLimit()).to.equal(tabLimit);
       const expensiveFoodItemprice = tabLimit + 1;
       await expect(restaurantTab.connect(friend1).spendFunds(expensiveFoodItemprice)).to.be.reverted;
       await expect(restaurantTab.connect(friend1).spendFunds(expensiveFoodItemprice)).to.be.revertedWith("funds remaining will not cover the expense.");
       const cheapFooditemWithinLimit = 1;
       await restaurantTab.connect(friend1).spendFunds(cheapFooditemWithinLimit);
-      expect(await restaurantTab.billAmount()).to.equal(cheapFooditemWithinLimit);
       expect(await restaurantTab.getRemainingSpendableAmount()).to.equal(tabLimit - cheapFooditemWithinLimit);
     });
     it("can allow user to add funds", async () => {
@@ -188,19 +189,12 @@ describe("RestaurantTab", function () {
       await restaurantTab.connect(tabOwnerAccount).closeBillAndPay();
       expect(await restaurantTab.isOpen()).to.equal(false);
     });
-    it("allows the tab restaurant to force close", async () => {
-      const { restaurantTab, restaurantAccount } = await loadFixture(deployRestaurantTab);
-      expect(await restaurantTab.isOpen()).to.equal(true);
-      await restaurantTab.connect(restaurantAccount).restaurantForceCloseTab();
-      expect(await restaurantTab.isOpen()).to.equal(false);
-    });
-    it("does not allow anyone else to close except restaurant or tab owner", async () => {
+    it("does not allow anyone else to close except tab owner", async () => {
       const { restaurantTab, friend1 } = await loadFixture(deployRestaurantTab);
       expect(await restaurantTab.isOpen()).to.equal(true);
       await expect(restaurantTab.connect(friend1).closeBillAndPay()).to.be.reverted;
-      await expect(restaurantTab.connect(friend1).closeBillAndPay()).to.be.revertedWith("you are not the tab owner or restaurant");
+      await expect(restaurantTab.connect(friend1).closeBillAndPay()).to.be.revertedWith("you did not open the tab.");
       expect(await restaurantTab.isOpen()).to.equal(true);
-
     });
     it("does not allow any more purchases after the bill is closed.", async () => {
       const { restaurantTab, tabOwnerAccount, friend1, } = await loadFixture(deployRestaurantTab);
@@ -219,47 +213,16 @@ describe("RestaurantTab", function () {
       const spendAmount = BigInt(100_000 * ONE_GWEI);
 
       expect(await restaurantTab.connect(friend1).spendFunds(spendAmount));
-      const txResponse = await restaurantTab.connect(tabOwnerAccount).closeBillAndPay();
+      await restaurantTab.connect(tabOwnerAccount).closeBillAndPay();
       expect(await restaurantTab.getRemainingSpendableAmount()).to.equal(0);
       expect(await hre.ethers.provider.getBalance(restaurantTab)).to.equal(0);
 
       const [restaurantBalance, tabOwnerBalance, friend1Balance] = await Promise.all(
         [restaurantAccount, tabOwnerAccount, friend1].map(account => hre.ethers.provider.getBalance(account))
       );
-      // I would like to note the nuances here. 
-      // The restaurant doesn't incur any gas fees when the tab owner closes.
       expect(restaurantBalance).to.be.equal(restaurantAccounttBalanceBefore + spendAmount);
       expect(tabOwnerBalance).to.be.lessThan(tabOwnerAccountBalanceBefore);
       expect(friend1Balance).to.be.lessThan(friend1BalanceBefore);
-      // TODO: maybe try to also account for the gas cost too. 
-      // expect(restaurantBalance).to.equal(restaurantAccounttBalanceBefore + BigInt(spendAmount));
-      // expect(tabOwnerBalance).to.equal(tabOwnerAccountBalanceBefore - gasUsedByTabOwner);
-      // expect(friend1Balance).to.equal(friend1BalanceBefore - gasUsedByFriend1);
-    });
-    it("pays the restaurant the amount billed, and returns remainder to tabOwner after restaurant closes tab", async () => {
-      const { restaurantTab, tabOwnerAccount, friend1, restaurantAccount } = await loadFixture(deployRestaurantTab);
-      const [restaurantAccountBalanceBefore, tabOwnerAccountBalanceBefore, friend1BalanceBefore] = await Promise.all(
-        [restaurantAccount, tabOwnerAccount, friend1].map(account => hre.ethers.provider.getBalance(account))
-      );
-
-      const spendAmount = BigInt(100_000 * ONE_GWEI);
-
-      expect(await restaurantTab.connect(friend1).spendFunds(spendAmount));
-      await restaurantTab.connect(restaurantAccount).restaurantForceCloseTab();
-      expect(await restaurantTab.getRemainingSpendableAmount()).to.equal(0);
-
-      const restaurantBalance = await hre.ethers.provider.getBalance(restaurantAccount);
-      const tabOwnerBalance = await hre.ethers.provider.getBalance(tabOwnerAccount);
-      const friend1Balance = await hre.ethers.provider.getBalance(friend1);
-      // I would like to note the nuances here. 
-      // The restaurant incurs gas fees when the tab owner closes.
-      expect(restaurantBalance).to.be.greaterThan(restaurantAccountBalanceBefore);
-      expect(tabOwnerBalance).to.be.lessThan(tabOwnerAccountBalanceBefore + spendAmount);
-      expect(friend1Balance).to.be.lessThan(friend1BalanceBefore);
-      // TODO: maybe try to also account for the gas cost too. 
-      // expect(restaurantBalance).to.equal(restaurantAccounttBalanceBefore + BigInt(spendAmount));
-      // expect(tabOwnerBalance).to.equal(tabOwnerAccountBalanceBefore - BigInt(spendAmount) - gasUsedByTabOwner);
-      // expect(friend1Balance).to.equal(friend1BalanceBefore - gasUsedByFriend1);
     });
   });
   describe("events", () => {
@@ -281,8 +244,7 @@ describe("RestaurantTab", function () {
       const { restaurantTab, tabOwnerAccount, restaurantAccount } = await loadFixture(deployRestaurantTab);
       await expect(restaurantTab.connect(tabOwnerAccount).closeBillAndPay())
         .to.emit(restaurantTab, "TabClosedAndBillPaid")
-        .withArgs(restaurantAccount, tabOwnerAccount, 0, anyValue, anyValue);
-
+        .withArgs(restaurantAccount, tabOwnerAccount, anyValue, anyValue);
     });
   });
 });
