@@ -33,7 +33,7 @@ describe("RestaurantTab", function () {
     
         return { restaurantTab, restaurantAccount };
       }
-      await expect(loadFixture(deployInvalidRestaurantTab)).to.be.revertedWith("user cannot be the restaurant.");
+      await expect(loadFixture(deployInvalidRestaurantTab)).to.be.revertedWith("user cannot be the same as the restaurant.");
     });
   });
 

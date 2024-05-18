@@ -34,7 +34,7 @@ contract RestaurantTab {
     }
     modifier isValidRestaurant(address _restaurant) {
         require(_restaurant != address(0), "not a valid restaurant");
-        require(_restaurant != msg.sender, "user cannot be the restaurant.");
+        require(_restaurant != msg.sender, "user cannot be the same as the restaurant.");
         _;
     }
     modifier userIsPartyMember() {
